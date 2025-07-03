@@ -16,7 +16,7 @@ trap cleanup EXIT
 
 # Start backend
 echo "Starting backend server..."
-cd "$SCRIPT_DIR/backend" && npm run dev &
+cd "$SCRIPT_DIR/backend" && mkdir -p data && npm run dev &
 BACKEND_PID=$!
 
 # Wait for backend to start
