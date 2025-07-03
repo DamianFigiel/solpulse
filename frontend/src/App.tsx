@@ -1,53 +1,39 @@
-import { useState } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Sidebar } from './components/layout/Sidebar';
-import { Header } from './components/layout/Header';
-import { DexSwaps } from './components/DexSwaps';
-import { NftMints } from './components/NftMints';
-import { TokenLaunches } from './components/TokenLaunches';
-import { WhaleAlerts } from './components/WhaleAlerts';
-import { NetworkHealth } from './components/NetworkHealth';
-import { useWebSocket } from './hooks/useWebSocket';
+import { useState } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import './App.css'
+import { Header } from './components/layout/Header'
+import Sidebar from './components/layout/Sidebar'
+import { DexSwaps } from './components/DexSwaps'
+import { NftMints } from './components/NftMints'
+import { TokenLaunches } from './components/TokenLaunches'
+import { WhaleAlerts } from './components/WhaleAlerts'
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient()
 
-type Tab = 'dex' | 'nft' | 'tokens' | 'whales';
+const components = {
+  dex: DexSwaps,
+  nft: NftMints,
+  tokens: TokenLaunches,
+  whales: WhaleAlerts
+}
 
 function App() {
-  const [activeTab, setActiveTab] = useState<Tab>('dex');
-  const { connected } = useWebSocket();
+  const [activeTab, setActiveTab] = useState<'dex' | 'nft' | 'tokens' | 'whales'>('dex')
 
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'dex':
-        return <DexSwaps />;
-      case 'nft':
-        return <NftMints />;
-      case 'tokens':
-        return <TokenLaunches />;
-      case 'whales':
-        return <WhaleAlerts />;
-      default:
-        return <DexSwaps />;
-    }
-  };
+  const ActiveComponent = components[activeTab] || components.dex
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="min-h-screen bg-dark-400 text-gray-100">
-        <Header connected={connected} />
-        <div className="flex">
-          <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
-          <main className="flex-1 p-6">
-            <NetworkHealth />
-            <div className="mt-6">
-              {renderContent()}
-            </div>
-          </main>
-        </div>
+      <div className="flex min-h-screen bg-dark-800">
+        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+        
+        <main className="flex-1 p-12">
+          <Header />
+          <ActiveComponent />
+        </main>
       </div>
     </QueryClientProvider>
-  );
+  )
 }
 
-export default App;
+export default App

@@ -5,7 +5,7 @@ import { Server } from 'socket.io';
 import dotenv from 'dotenv';
 import winston from 'winston';
 import { initDatabase } from './lib/database.js';
-import { setupSoldexerStreams } from './lib/soldexer.js';
+import { initSoldexerStreams } from './lib/soldexer.js';
 import apiRoutes from './routes/api.js';
 
 dotenv.config();
@@ -16,11 +16,7 @@ const logger = winston.createLogger({
     winston.format.timestamp(),
     winston.format.json()
   ),
-  transports: [
-    new winston.transports.Console({
-      format: winston.format.simple()
-    })
-  ]
+  transports: [new winston.transports.Console()]
 });
 
 const app = express();
@@ -29,47 +25,64 @@ const io = new Server(httpServer, {
   cors: {
     origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
     methods: ['GET', 'POST']
-  }
+  },
+  pingTimeout: 60000
 });
 
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:5173'
 }));
 app.use(express.json());
-
 app.use('/api', apiRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    connections: io.engine.clientsCount 
+    connections: io.engine.clientsCount,
+    uptime: process.uptime()
   });
 });
+
+const subscriptionHandlers = {
+  'subscribe-dex-swaps': 'dex-swaps',
+  'subscribe-nft-mints': 'nft-mints',
+  'subscribe-token-launches': 'token-launches',
+  'subscribe-whale-alerts': 'whale-alerts',
+  'subscribe-network-health': 'network-health',
+  'unsubscribe-dex-swaps': 'dex-swaps',
+  'unsubscribe-nft-mints': 'nft-mints',
+  'unsubscribe-token-launches': 'token-launches',
+  'unsubscribe-whale-alerts': 'whale-alerts',
+  'unsubscribe-network-health': 'network-health'
+};
 
 io.on('connection', (socket) => {
   logger.info(`Client connected: ${socket.id}`);
   
-  socket.on('subscribe', (channels) => {
-    if (Array.isArray(channels)) {
-      channels.forEach(channel => {
-        socket.join(channel);
-        logger.info(`Client ${socket.id} subscribed to ${channel}`);
-      });
-    }
-  });
+  socket.emit('clear-data');
   
-  socket.on('unsubscribe', (channels) => {
-    if (Array.isArray(channels)) {
-      channels.forEach(channel => {
-        socket.leave(channel);
-        logger.info(`Client ${socket.id} unsubscribed from ${channel}`);
-      });
-    }
+  Object.entries(subscriptionHandlers).forEach(([event, room]) => {
+    socket.on(event, () => {
+      const action = event.startsWith('subscribe') ? 'join' : 'leave';
+      socket[action](room);
+      logger.info(`Client ${socket.id} ${action}ed ${room}`);
+    });
   });
   
   socket.on('disconnect', () => {
     logger.info(`Client disconnected: ${socket.id}`);
+  });
+  
+  socket.on('ping', () => {
+    socket.emit('pong');
+  });
+  
+  socket.on('debug', () => {
+    socket.emit('debug-info', {
+      socketId: socket.id,
+      serverTime: new Date().toISOString()
+    });
   });
 });
 
@@ -78,7 +91,10 @@ async function start() {
     await initDatabase();
     logger.info('Database initialized');
     
-    await setupSoldexerStreams(io, logger);
+    const apiUrl = process.env.SOLDEXER_API_URL || 'https://portal.sqd.dev/datasets/solana-mainnet';
+    const apiKey = process.env.SOLDEXER_API_KEY || 'demo';
+    
+    initSoldexerStreams(apiUrl, apiKey, io, logger);
     logger.info('Soldexer streams initialized');
     
     const PORT = process.env.PORT || 3001;
@@ -94,3 +110,11 @@ async function start() {
 start();
 
 export { io, logger };
+
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception:', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled promise rejection:', reason);
+});

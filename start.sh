@@ -2,6 +2,9 @@
 
 echo "Starting SolPulse..."
 
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
 # Function to kill background processes on exit
 cleanup() {
     echo "Shutting down services..."
@@ -13,7 +16,7 @@ trap cleanup EXIT
 
 # Start backend
 echo "Starting backend server..."
-cd backend && npm run dev &
+cd "$SCRIPT_DIR/backend" && npm run dev &
 BACKEND_PID=$!
 
 # Wait for backend to start
@@ -21,7 +24,7 @@ sleep 3
 
 # Start frontend
 echo "Starting frontend..."
-cd ../frontend && npm run dev &
+cd "$SCRIPT_DIR/frontend" && npm run dev &
 FRONTEND_PID=$!
 
 echo "SolPulse is running!"

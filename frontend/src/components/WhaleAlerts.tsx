@@ -1,156 +1,146 @@
-import { useEffect, useState } from 'react';
-import { AlertCircle, TrendingUp, ArrowUpRight, ArrowDownRight } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import axios from 'axios';
+import { useEffect, useState, useCallback } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+import { format } from 'date-fns';
+import { Zap, DollarSign, ArrowRight, ExternalLink } from 'lucide-react';
 
 interface WhaleTransaction {
-  id: number;
+  id: string;
   transaction_id: string;
-  type: string;
-  from_address: string;
-  to_address: string;
-  amount: number;
+  blockNumber: number;
+  transactionIndex: number;
+  account: string;
+  fromAddress: string;
+  toAddress: string;
   token: string;
-  value_usd: number;
+  amount: string | number;
+  amountUsd: string | number;
+  preBalance: string;
+  postBalance: string;
+  change: 'increase' | 'decrease';
   timestamp: number;
 }
 
+const formatAmount = (amount: number | string) => {
+  const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+  if (isNaN(numAmount)) return '0';
+  if (numAmount >= 1000000) return `${(numAmount / 1000000).toFixed(2)}M`;
+  if (numAmount >= 1000) return `${(numAmount / 1000).toFixed(2)}K`;
+  return numAmount.toFixed(2);
+};
+
+const formatUSD = (amount: number | string) => {
+  const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+  if (isNaN(numAmount)) return '$0';
+  return `$${numAmount.toLocaleString()}`;
+};
+
 export function WhaleAlerts() {
-  const [whales, setWhales] = useState<WhaleTransaction[]>([]);
-  const [audioEnabled, setAudioEnabled] = useState(false);
-  const { subscribe, unsubscribe, on, off } = useWebSocket();
+  const [transactions, setTransactions] = useState<WhaleTransaction[]>([]);
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  const { connected, subscribe, unsubscribe, on, off } = useWebSocket();
 
-  const { data: initialWhales, isLoading } = useQuery({
-    queryKey: ['whale-transactions'],
-    queryFn: async () => {
-      const response = await axios.get(`${API_URL}/api/whale-transactions`);
-      return response.data.data as WhaleTransaction[];
-    },
-  });
+  const handleNewTransaction = useCallback((transaction: WhaleTransaction) => {
+    setTransactions(prev => [transaction, ...prev].slice(0, 100));
+    setLastUpdate(new Date());
+  }, []);
 
-  useEffect(() => {
-    if (initialWhales) {
-      setWhales(initialWhales);
-    }
-  }, [initialWhales]);
+  const handleClearData = useCallback(() => {
+    setTransactions([]);
+  }, []);
 
   useEffect(() => {
     subscribe(['whale-alerts']);
-
-    const handleNewWhale = (whale: WhaleTransaction) => {
-      setWhales((prev) => [whale, ...prev].slice(0, 50));
-      
-      if (audioEnabled && whale.value_usd > 100000) {
-        const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBTGH0fPTgjMGHm7A7+OZURE');
-        audio.play().catch(() => {});
-      }
-    };
-
-    on('whale', handleNewWhale);
-
+    on('whale', handleNewTransaction);
+    on('clear-data', handleClearData);
+    
     return () => {
-      off('whale', handleNewWhale);
+      off('whale', handleNewTransaction);
+      off('clear-data', handleClearData);
       unsubscribe(['whale-alerts']);
     };
-  }, [subscribe, unsubscribe, on, off, audioEnabled]);
-
-  const getAlertColor = (value: number) => {
-    if (value >= 1000000) return 'text-red-400 bg-red-400/10';
-    if (value >= 500000) return 'text-purple-400 bg-purple-400/10';
-    if (value >= 100000) return 'text-yellow-400 bg-yellow-400/10';
-    return 'text-green-400 bg-green-400/10';
-  };
-
-  const formatValue = (value: number) => {
-    if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
-    if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
-    return `$${value.toFixed(0)}`;
-  };
-
-  if (isLoading) {
-    return (
-      <div className="card">
-        <div className="animate-pulse space-y-4">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="h-24 bg-dark-200/50 rounded-lg"></div>
-          ))}
-        </div>
-      </div>
-    );
-  }
+  }, [subscribe, unsubscribe, on, off, handleNewTransaction, handleClearData]);
 
   return (
-    <div className="space-y-4">
-      <div className="card">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold flex items-center space-x-2">
-            <AlertCircle className="w-6 h-6 text-red-500" />
-            <span>Whale Alerts</span>
-          </h2>
-          
-          <button
-            onClick={() => setAudioEnabled(!audioEnabled)}
-            className={`px-4 py-2 rounded-lg text-sm transition-colors ${
-              audioEnabled
-                ? 'bg-primary-600 text-white'
-                : 'bg-dark-200 text-gray-400'
-            }`}
-          >
-            {audioEnabled ? '🔊 Sound On' : '🔇 Sound Off'}
-          </button>
+    <div className="card">
+      <div className="flex items-center justify-between mb-10">
+        <div className="flex items-center space-x-5">
+          <div className="p-4 rounded-xl bg-gradient-to-r from-blue-400/20 to-indigo-500/20 border border-blue-400/30">
+            <DollarSign className="w-7 h-7 text-blue-400" />
+          </div>
+          <div>
+            <h2 className="text-3xl font-bold text-gray-100 mb-2">Whale Alerts</h2>
+            <p className="text-base text-gray-400">Large value transactions</p>
+          </div>
         </div>
+        
+        <div className="flex flex-col items-end">
+          <div className="flex items-center space-x-3 mb-1">
+            <Zap className={`w-5 h-5 ${connected ? 'text-green-400 animate-pulse' : 'text-red-400'}`} />
+            <span className={`text-base font-medium ${connected ? 'text-green-400' : 'text-red-400'}`}>
+              {connected ? 'Live' : 'Disconnected'}
+            </span>
+          </div>
+          <div className="text-xs text-gray-500">
+            Last update: {format(lastUpdate, 'HH:mm:ss')}
+          </div>
+        </div>
+      </div>
 
-        {whales.length === 0 ? (
-          <p className="text-center text-gray-500 py-8">Waiting for whale transactions...</p>
+      <div className="space-y-4">
+        {transactions.length === 0 ? (
+          <div className="text-center py-16">
+            <DollarSign className="w-16 h-16 text-gray-500 mx-auto mb-6 opacity-50" />
+            <p className="text-gray-500 text-xl">Waiting for real-time whale transactions...</p>
+          </div>
         ) : (
-          <div className="space-y-3">
-            {whales.map((whale) => (
-              <div
-                key={whale.transaction_id}
-                className={`rounded-lg p-4 border ${getAlertColor(whale.value_usd)} border-current/20`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
-                    <div className={`p-3 rounded-full ${getAlertColor(whale.value_usd)}`}>
-                      {whale.type === 'transfer' ? (
-                        <ArrowUpRight className="w-6 h-6" />
-                      ) : (
-                        <TrendingUp className="w-6 h-6" />
-                      )}
-                    </div>
-                    
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <span className="font-bold text-2xl">
-                          {formatValue(whale.value_usd)}
-                        </span>
-                        <span className="text-gray-400">
-                          ({whale.amount.toLocaleString()} {whale.token})
-                        </span>
-                      </div>
-                      
-                      <div className="text-sm text-gray-400 mt-1">
-                        <span className="font-mono">{whale.from_address}</span>
-                        <span className="mx-2">→</span>
-                        <span className="font-mono">{whale.to_address}</span>
-                      </div>
+          transactions.map((tx) => (
+            <div
+              key={`${tx.transaction_id}-${tx.timestamp}-${tx.id || 'unknown'}`}
+              className="data-row flex items-center justify-between py-6"
+            >
+              <div className="flex items-center space-x-8">
+                <div className="whale-badge">
+                  {tx.token}
+                </div>
+                
+                <div className="flex items-center space-x-6">
+                  <div className="text-right min-w-[120px]">
+                    <div className="text-sm text-gray-400 font-medium">Account</div>
+                    <div className="font-bold text-gray-100">{tx.fromAddress}</div>
+                    <div className="text-xs text-gray-500">
+                      {tx.change === 'increase' ? '+' : '-'}{formatAmount(tx.amount)} {tx.token}
                     </div>
                   </div>
                   
-                  <div className="text-right">
-                    <p className="text-sm font-medium capitalize">{whale.type}</p>
-                    <p className="text-sm text-gray-400">
-                      {format(new Date(whale.timestamp), 'HH:mm:ss')}
-                    </p>
+                  <ArrowRight className="w-6 h-6 text-gray-500 flex-shrink-0" />
+                  
+                  <div className="text-left min-w-[120px]">
+                    <div className="text-sm text-gray-400 font-medium">Balance Change</div>
+                    <div className="font-bold text-gray-100">{formatAmount(tx.postBalance)} {tx.token}</div>
+                    <div className="text-xs text-gray-500">
+                      from {formatAmount(tx.preBalance)} {tx.token}
+                    </div>
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
+
+              <div className="flex items-center space-x-8">
+                <div className="volume-badge volume-high">
+                  {formatUSD(tx.amountUsd)}
+                </div>
+                
+                <div className="text-right min-w-[140px]">
+                  <div className="text-base font-semibold text-gray-200 mb-1">
+                    {format(new Date(tx.timestamp), 'HH:mm:ss')}
+                  </div>
+                  <div className="text-sm text-gray-500 font-mono flex items-center space-x-1">
+                    <span>Block {tx.blockNumber}</span>
+                    <ExternalLink className="w-3 h-3 opacity-50" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))
         )}
       </div>
     </div>

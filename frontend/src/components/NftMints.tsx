@@ -1,121 +1,123 @@
-import { useEffect, useState } from 'react';
-import { Image, ExternalLink } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import axios from 'axios';
+import { useEffect, useState, useCallback } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
-
-const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+import { format } from 'date-fns';
+import { Zap, Frame, ExternalLink } from 'lucide-react';
 
 interface NftMint {
-  id: number;
-  mint_address: string;
-  collection_name: string;
-  token_name: string;
-  symbol: string;
-  uri: string;
+  transaction_id: string;
+  collection: string;
+  name: string;
   price: number;
+  price_usd: number;
   minter: string;
   timestamp: number;
 }
 
 export function NftMints() {
   const [mints, setMints] = useState<NftMint[]>([]);
-  const { subscribe, unsubscribe, on, off } = useWebSocket();
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  const { connected, subscribe, unsubscribe, on, off } = useWebSocket();
 
-  const { data: initialMints, isLoading } = useQuery({
-    queryKey: ['nft-mints'],
-    queryFn: async () => {
-      const response = await axios.get(`${API_URL}/api/nft-mints`);
-      return response.data.data as NftMint[];
-    },
-  });
+  // Handle new mint events
+  const handleNewMint = useCallback((mint: NftMint) => {
+    console.log('Received new NFT mint:', mint);
+    setMints(prev => [mint, ...prev].slice(0, 100));
+    setLastUpdate(new Date());
+  }, []);
 
+  // Handle clear data event
+  const handleClearData = useCallback(() => {
+    console.log('Clearing all existing NFT mint data');
+    setMints([]);
+  }, []);
+
+  // Subscribe to WebSocket events
   useEffect(() => {
-    if (initialMints) {
-      setMints(initialMints);
-    }
-  }, [initialMints]);
-
-  useEffect(() => {
+    console.log('Setting up NFT mints WebSocket subscription');
+    
+    // Subscribe to the nft-mints channel
     subscribe(['nft-mints']);
-
-    const handleNewMint = (mint: NftMint) => {
-      setMints((prev) => [mint, ...prev].slice(0, 50));
-    };
-
+    
+    // Add event listeners
     on('mint', handleNewMint);
-
+    on('clear-data', handleClearData);
+    
+    // Cleanup function
     return () => {
       off('mint', handleNewMint);
+      off('clear-data', handleClearData);
       unsubscribe(['nft-mints']);
     };
-  }, [subscribe, unsubscribe, on, off]);
-
-  if (isLoading) {
-    return (
-      <div className="card">
-        <div className="animate-pulse grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="h-48 bg-dark-200/50 rounded-lg"></div>
-          ))}
-        </div>
-      </div>
-    );
-  }
+  }, [subscribe, unsubscribe, on, off, handleNewMint, handleClearData]);
 
   return (
-    <div className="space-y-4">
-      <div className="card">
-        <h2 className="text-xl font-bold mb-4 flex items-center space-x-2">
-          <Image className="w-6 h-6 text-accent-500" />
-          <span>Recent NFT Mints</span>
-        </h2>
+    <div className="card">
+      <div className="flex items-center justify-between mb-10">
+        <div className="flex items-center space-x-5">
+          <div className="p-4 rounded-xl bg-gradient-to-r from-purple-400/20 to-pink-500/20 border border-purple-400/30">
+            <Frame className="w-7 h-7 text-purple-400" />
+          </div>
+          <div>
+            <h2 className="text-3xl font-bold text-gray-100 mb-2">NFT Mints</h2>
+            <p className="text-base text-gray-400">Latest NFT collection launches</p>
+          </div>
+        </div>
+        
+        <div className="flex flex-col items-end">
+          <div className="flex items-center space-x-3 mb-1">
+            <Zap className={`w-5 h-5 ${connected ? 'text-green-400 animate-pulse' : 'text-red-400'}`} />
+            <span className={`text-base font-medium ${connected ? 'text-green-400' : 'text-red-400'}`}>
+              {connected ? 'Live' : 'Disconnected'}
+            </span>
+          </div>
+          <div className="text-xs text-gray-500">
+            Last update: {format(lastUpdate, 'HH:mm:ss')}
+          </div>
+        </div>
+      </div>
 
+      <div className="space-y-4">
         {mints.length === 0 ? (
-          <p className="text-center text-gray-500 py-8">Waiting for NFT mints...</p>
+          <div className="text-center py-16">
+            <Frame className="w-16 h-16 text-gray-500 mx-auto mb-6 opacity-50" />
+            <p className="text-gray-500 text-xl">Waiting for real-time NFT mints...</p>
+          </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {mints.map((mint) => (
-              <div
-                key={mint.mint_address}
-                className="glass-hover rounded-lg p-4 space-y-3"
-              >
-                <div className="aspect-square bg-dark-200/50 rounded-lg flex items-center justify-center">
-                  <Image className="w-12 h-12 text-gray-600" />
+          mints.map((mint) => (
+            <div
+              key={mint.transaction_id}
+              className="data-row flex items-center justify-between py-6"
+            >
+              <div className="flex items-center space-x-8">
+                <div className="nft-badge">
+                  {mint.collection}
                 </div>
                 
                 <div>
-                  <h3 className="font-semibold text-white">{mint.token_name}</h3>
-                  <p className="text-sm text-gray-400">{mint.collection_name}</p>
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-400">Price</p>
-                    <p className="font-medium text-accent-400">{mint.price.toFixed(2)} SOL</p>
-                  </div>
-                  
-                  <div className="text-right">
-                    <p className="text-xs text-gray-500">
-                      {format(new Date(mint.timestamp), 'HH:mm:ss')}
-                    </p>
-                    <p className="text-xs text-gray-600">{mint.minter}</p>
+                  <div className="font-bold text-lg text-gray-100">{mint.name}</div>
+                  <div className="text-sm text-gray-400 font-medium">
+                    Minted by {mint.minter}
                   </div>
                 </div>
-                
-                <a
-                  href={mint.uri}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center space-x-1 text-xs text-primary-400 hover:text-primary-300"
-                >
-                  <span>View Metadata</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
               </div>
-            ))}
-          </div>
+
+              <div className="flex items-center space-x-8">
+                <div className="price-badge">
+                  {mint.price.toFixed(2)} SOL (${mint.price_usd.toFixed(2)})
+                </div>
+                
+                <div className="text-right min-w-[140px]">
+                  <div className="text-base font-semibold text-gray-200 mb-1">
+                    {format(new Date(mint.timestamp), 'HH:mm:ss')}
+                  </div>
+                  <div className="text-sm text-gray-500 font-mono flex items-center space-x-1">
+                    <span>{mint.transaction_id.slice(0, 6)}...{mint.transaction_id.slice(-4)}</span>
+                    <ExternalLink className="w-3 h-3 opacity-50" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))
         )}
       </div>
     </div>
